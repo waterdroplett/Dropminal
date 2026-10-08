@@ -62,6 +62,8 @@ If `assemdows.exe` is in a folder on your `PATH`, you can run Assemdows programs
 Dropminal C:\Projects > assemdows test.asdw
 ```
 
+If you don't have Assemdows yet it is hosted on the [Assemdows Github](https://github.com/waterdroplett/Assemdows).
+
 ## Project status
 
 Early and experimental. Planned ideas include command history, tab completion, and more built-in commands.
