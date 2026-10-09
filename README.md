@@ -19,9 +19,20 @@ Dropminal reads commands, runs programs, and keeps track of your working folder.
 | `path` | Shows the current folder |
 | `path <folder>` | Changes to that folder (supports `..`, relative paths, and `/` or `\`) |
 | `exit` | Closes Dropminal |
+| `print` | Prints whatever input is put after |
+| `listfiles` | Lists all the files in the current folder |
+| `clear` | Clears all output |
 | anything else | Runs it as a program, e.g. `python script.py` |
 
 Programs that are not `.exe` files, such as `dir`, `echo`, and `.bat` scripts, are `cmd.exe` features and are not supported yet.
+
+## Resources
+
+Resources are like extensions, you can make your own and download other ones.
+
+| Resource | What it does |
+| --- | --- |
+| `dropcalc` | Calculates the input afterwards such as `dropcalc 1 + 4 ^ pi` |
 
 ## Example
 
