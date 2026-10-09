@@ -3,8 +3,9 @@
 #include <windows.h>
 #include <conio.h>
 #include <ctype.h>
+#include <urlmon.h>
 
-#define D_VERSION "v0.2"
+#define D_VERSION "v0.3"
 
 #define MAX_ARGS 10
 #define ARG_LEN 256
@@ -30,6 +31,8 @@ static const Builtin builtins[] = {
     { "exit",      C_GREEN },
     { "help",      C_CYAN },
     { "dropcalc",   C_MAGENTA},
+    { "file",   C_BLUE },
+    { "assemdows", C_MAGENTA},
 };
 #define BUILTIN_COUNT (sizeof builtins / sizeof builtins[0])
 
@@ -77,6 +80,9 @@ void color_line(const char *buf) {
 
         const char *color = C_RESET;
         if (k == 0) color = color_for_command(args[0], C_YELLOW);
+        if (k == 1 && !strcmp(args[0],"file")) {
+            color = C_YELLOW;
+        }
         else if (args[k][0] == '-' && args[k][1] == '-') color = C_GRAY;
 
         printf("%s%.*s%s", color, ends[k] - starts[k], buf + starts[k], C_RESET);
@@ -150,7 +156,8 @@ int read_line(const char *prompt, char *buf, size_t size) {
         } else if (c >= 32 && c < 127 && len < size - 1) {   // printable characters
             buf[len++] = (char)c;
             buf[len] = '\0';
-        } else {
+        }
+        else {
             continue;                         // ignore everything else
         }
 
@@ -161,21 +168,61 @@ int read_line(const char *prompt, char *buf, size_t size) {
 }
 
 void print_banner(void) {
-    printf(C_CYAN
-        "╔════════════════════════════════╗\n"
-        "║" C_BLUE "   D R O P M I N A L   "D_VERSION"     " C_CYAN "║\n"
-        "║" C_GRAY "   by waterdroplett             " C_CYAN "║\n"
-        "╚════════════════════════════════╝\n"
-        C_RESET "\n");
+    printf(C_CYAN "Dropminal "D_VERSION C_RESET" Copyright (C) 2026 waterdroplett\nThis program comes with ABSOLUTELY NO WARRANTY; for details type 'show w'.\nThis is free software, and you are welcome to redistribute it.\n\n");
+}
+
+int download_file(const char *url, const char *dest) {
+    HRESULT hr = URLDownloadToFileA(NULL, url, dest, 0, NULL);
+    return hr == S_OK ? 0 : -1;
+}
+
+// Prints a file to the screen. Returns 0 on success, -1 if it can't be opened.
+int print_file(const char *filename) {
+    FILE *f = fopen(filename, "rb");          // "rb" = read, bytes exactly as stored
+    if (!f) {
+        printf("can't open file: %s\n", filename);
+        return -1;
+    }
+
+    char chunk[4096];
+    size_t n;
+    while ((n = fread(chunk, 1, sizeof chunk, f)) > 0)
+        fwrite(chunk, 1, n, stdout);
+
+    fclose(f);
+    return 0;
 }
 
 void print_help(void) {
+    printf("\n");
+    print_banner();
     printf(
-        "\n"C_CYAN"Dropminal " C_YELLOW D_VERSION "\n"
-        C_GRAY"by waterdroplett\n\n"C_RESET
-
         "GitHub repository: "C_YELLOW"https://github.com/waterdroplett/Dropminal"C_BLUE" (use ctrl + click to follow)"C_RESET"\n"
         "\n"
+        "exit: Closes the terminal\n"
+        "clear: Clears output in the terminal\n"
+        "help: Prints this help\n"
+        "show w: Shows the license\n"
+        "path: Changes the current directory\n\n"
+
+        "file\n"
+        "-----\n"
+        "file list: Lists the files in the current directory\n"
+        "file create: Creates a new file in the current directory with the first argument as it's name\n"
+        "file delete: Deletes the file with the name that matches the first argument\n"
+        "file content: Shows the content of the file with the name that matches the first argument\n\n"
+
+        "dropget: Downloads a resource that's name matches the first argument\n"
+        "-----\n"
+        "dropget assemdows: Downloads the latest release of Assemdows from GitHub\n\n"
+
+        "Resources: Type the name and they will run\n"
+        "-----\n"
+        "dropcalc [Pre-installed]: Calcuates the equation given after it\n"
+        "assemdows [Downloadable]: Runs .asdw files\n\n"
+
+        "print: Outputs the first argument\n"
+        "anything else: Will run if is an executable in the current directory or is a downloaded resource\n"
     );
 }
 
@@ -202,7 +249,7 @@ void list_dir(const char *folder) {
 
         int is_dir = (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
         unsigned long long size = ((unsigned long long)fd.nFileSizeHigh << 32) | fd.nFileSizeLow;
-
+        
         SYSTEMTIME utc, local;
         FileTimeToSystemTime(&fd.ftLastWriteTime, &utc);
         SystemTimeToTzSpecificLocalTime(NULL, &utc, &local);
@@ -282,10 +329,21 @@ int extract_command(const char *_in_string, char *_out_string, char args[MAX_ARG
     return argc;
 }
 
+int file_exists(const char *path) {
+    DWORD a = GetFileAttributesA(path);
+    return a != INVALID_FILE_ATTRIBUTES && !(a & FILE_ATTRIBUTE_DIRECTORY);
+}
+
+int folder_exists(const char *path) {
+    DWORD a = GetFileAttributesA(path);
+    return a != INVALID_FILE_ATTRIBUTES && (a & FILE_ATTRIBUTE_DIRECTORY);
+}
+
 int main(void) {
     setup_console();
 
     char buffer[512];
+    char quickbuf[512];
     char command[25];
     char args[MAX_ARGS][ARG_LEN];
     int argc = 0;
@@ -299,6 +357,10 @@ int main(void) {
     char exe_dir[MAX_PATH];
     GetModuleFileNameA(NULL, exe_dir, sizeof exe_dir);
     *strrchr(exe_dir, '\\') = '\0';
+
+    snprintf(quickbuf,sizeof(quickbuf),"%s\\Resources\\assemdows.exe", exe_dir);
+    int has_assemdows = file_exists(quickbuf);
+
     while (1) {
         snprintf(prompt, sizeof prompt, C_CYAN"Dropminal " C_YELLOW"%s" C_CYAN"> "C_RESET, path);
         if (!read_line(prompt, buffer, sizeof(buffer))) break;
@@ -309,6 +371,21 @@ int main(void) {
         if (!strcmp(command,"exit")) { break; }
         else if (!strcmp(command,"clear")) { printf("\x1b[2J\x1b[H"); }
         else if (!strcmp(command,"help")) { print_help(); }
+        else if (!strcmp(command, "show")) {
+            if (argc < 1) {
+                printf(C_YELLOW"show" C_RESET" requires atleast 1 argument, you have provided %d arguments\n", argc);
+                continue;
+            }
+            if (!strcmp(args[0],"w")) {
+                char full[1024];
+                snprintf(full, sizeof full, "notepad \"%s\\LICENSE\"", exe_dir);
+
+                DWORD code = 0, err = 0;
+                if (!run_program(full, &code, &err)) {
+                    printf("%s: failed to start (error %lu)\n", command, err);
+                }
+            }
+        }
         else if (!strcmp(command,"path")) {
             if (argc < 1) {
                 printf(C_YELLOW"path" C_RESET" requires atleast 1 argument, you have provided %d arguments\n", argc);
@@ -318,8 +395,67 @@ int main(void) {
                 printf(C_YELLOW"path" C_RESET": can't open folder: %s\n", args[0]);
             }
         }
-        else if (!strcmp(command, "listfiles")) {
-            list_dir(argc > 0 ? args[0] : ".");
+        else if (!strcmp(command, "file")) {
+            if (argc < 1) {
+                printf("\nfile\n\nlist: Lists the files in the current directory\ncreate: Creates a file in the current directory with the name of the first argument\ndelete: Deletes a file in the current directory that matches the name of the first argument\n\n");
+                continue;
+            }
+            if (!strcmp(args[0], "list")) {
+                list_dir(argc > 1 ? args[1] : ".");
+            }
+            else if (!strcmp(args[0], "create")) {
+                if (argc < 2) {printf(C_YELLOW"file create"C_RESET": requires atleast 2 arguments, you have provided %d arguments\n", argc); continue;}
+                char fileName[ARG_LEN];
+                snprintf(fileName, sizeof(fileName), "%s", args[1]);
+                if (file_exists(fileName)) {
+                    printf("%s already exists\n", fileName);
+                    continue;
+                }
+                FILE *f = fopen(fileName,"w");
+                if (f == NULL) {
+                    printf("Failed to create %s\n", fileName);
+                    continue;
+                }
+                fclose(f);
+                f = NULL;
+                printf("Created %s\n", fileName);
+            }
+            else if (!strcmp(args[0], "delete")) {
+                if (argc < 2) {printf(C_YELLOW"file delete"C_RESET": requires atleast 2 arguments, you have provided %d arguments\n", argc); continue;}
+                char fileName[ARG_LEN];
+                snprintf(fileName, sizeof(fileName), "%s", args[1]);
+                int failed = remove(fileName);
+                if (!failed) {
+                    printf("Deleted %s\n", fileName);
+                }
+                else {
+                    printf("Failed to delete %s\n", fileName);
+                }
+            }
+            else if (!strcmp(args[0], "content")) {
+                if (argc < 2) {printf(C_YELLOW"file content"C_RESET": requires atleast 2 arguments, you have provided %d arguments\n", argc); continue;}
+                char fileName[ARG_LEN];
+                snprintf(fileName, sizeof(fileName), "%s", args[1]);
+                print_file(fileName);
+                printf("\n");
+            }
+        }
+        else if (!strcmp(command, "dropget")) {
+            if (argc < 1) {
+                printf(C_MAGENTA"dropget"C_RESET" requires a resource name\n");
+                continue;
+            }
+            if (!strcmp(args[0],"assemdows")) {
+                char URL[] = "https://github.com/waterdroplett/Assemdows/releases/latest/download/assemdows.exe";
+                char dest[MAX_PATH];
+                snprintf(dest,sizeof(dest),"%s\\Resources\\assemdows.exe", exe_dir);
+
+                printf("downloading assemdows ...\n");
+                if (download_file(URL,dest) == 0)
+                    printf("saved to assemdows.exe\n");
+                else
+                    printf(C_MAGENTA"dropget"C_RESET": download failed\n");
+            }
         }
         else if (!strcmp(command, "print")) {
             if (argc < 1) {
@@ -355,7 +491,12 @@ int main(void) {
             DWORD code = 0, err = 0;
             if (!run_program(full, &code, &err)) {
                 if (err == ERROR_FILE_NOT_FOUND || err == ERROR_PATH_NOT_FOUND)
-                    printf(C_YELLOW"%s" C_RESET" is not recognized as a command.\n", command);
+                    if (!strcmp(command,"assemdows")) {
+                        printf("Download "C_MAGENTA"Assemdows"C_RESET" using 'dropget assemdows'\n");
+                    }
+                    else {
+                        printf(C_YELLOW"%s" C_RESET" is not recognized as a command.\n", command);
+                    }
                 else
                     printf("%s: failed to start (error %lu)\n", command, err);
             }
